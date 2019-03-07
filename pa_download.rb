@@ -10,6 +10,7 @@
 
 
 require 'rubygems'
+require 'tty-progressbar'
 require 'mechanize'
 require 'cgi'
 require 'typhoeus'
@@ -63,8 +64,14 @@ end
 # Threaded downloader with Typheous
 # Where most of the magic happens
 def download_videos(videoHash, cookie, concurrency)
+  bars = TTY::ProgressBar::Multi.new("Overall [:bar] :percent")
   videoArray = videoHash.to_a
   hydra = Typhoeus::Hydra.new(max_concurrency: concurrency)
+
+  barArray = Hash.new
+  videoArray.map do |i|
+    barArray[i[0]] = bars.register("#{i[1][0].to_s} [:bar]", total: 100)
+  end
 
   fileLinks = videoArray.map do |i|
     'https://www.pentesteracademy.com' + i[1][1]
@@ -75,25 +82,19 @@ def download_videos(videoHash, cookie, concurrency)
     link = 'https://www.pentesteracademy.com' + vid[1][1]
     request = Typhoeus::Request.new(link, headers: {'Cookie' => cookie}, followlocation: true)
 
-=begin
     request.on_progress { |dltotal, dlnow, ultotal, ulnow|
-      puts (dltotal.to_f / dlnow.to_f)
-      puts dltotal
-      puts dlnow
-        if dltotal.is_a? Integer
-        progress = "=" *  (((dlnow.to_f / dltotal.to_f) * 100) / 5)
-      else 
-        puts "Done"
+      if dltotal.is_a? Integer
+        percent = (dlnow.to_f / dltotal.to_f)
+        if percent.nan?
+          percent = 0
+        end
+        barArray[vid[0]].ratio = percent
       end
-      printf("\rProgress: [%-20s]", progress)
-=end
     }
-
     request.on_body do |chunk|
       download_file.write(chunk)
     end
     request.on_complete do |response|
-      puts filename + " downloaded" 
       download_file.close
     end
     hydra.queue(request)
