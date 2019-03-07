@@ -11,8 +11,8 @@
 
 require 'rubygems'
 require 'mechanize'
-require 'em-http'
 require 'cgi'
+require 'typhoeus'
 
 NAVIGATOR = Mechanize.new { |agent|
   agent.user_agent_alias = "Windows Firefox"
@@ -27,7 +27,8 @@ def build_cookie(cookieValue)
   httpCookie.expires = Time.now + (60*60*24)
   httpCookie.secure = true
   httpCookie.httponly = true
-  httpCookie.to_s
+  httpCookie.name.to_s + "=" + httpCookie.value.to_s
+  httpCookie.to_s.split(";")[0]
 end
 
 
@@ -58,38 +59,47 @@ def scrape_download_links(videoList)
 end
 
 # Writes the files with a easily searchable filename
-def write_file(num, file, name)
-  formattedName = "%03d" % (num) + "_" + name.tr(":", "").tr(",", "").strip.tr(" ", "_") + ".mp4"
-  open(formattedName, "wb") do |f|
-    f.write(file)
-  end
-end
 
-# Threaded downloader with EventMachine
+# Threaded downloader with Typheous
 # Where most of the magic happens
 def download_videos(videoHash, cookie, concurrency)
-  EventMachine.run do
-    multi = EventMachine::MultiRequest.new
+  videoArray = videoHash.to_a
+  hydra = Typhoeus::Hydra.new(max_concurrency: concurrency)
 
-    # Converts argument Hash from {"1" => [Link, path]} format to ["1", [Link, path]] format
-    # Because I'm too lazy to OOP this
-    videoArray = videoHash.to_a
-
-    EM::Iterator.new(videoArray, concurrency).each do |url, iterator|
-      downloadPath = url[1][1]
-      # Yeah go ahead and hard-code that url you idi0t
-      downloadURL = 'https://www.pentesteracademy.com' + downloadPath
-      # Figuring out how to add the cookie to the request took way too long
-      req = EventMachine::HttpRequest.new(downloadURL).get :redirects => 3, :head => {'cookie' => [cookie]} 
-      req.callback do
-        # This is disgusting
-        write_file(url[0].to_i, req.response, url[1][0].to_s)
-        iterator.next
-      end
-      multi.add url, req
-      multi.callback { EventMachine.stop } if url == videoArray.last
-    end
+  fileLinks = videoArray.map do |i|
+    'https://www.pentesteracademy.com' + i[1][1]
   end
+  videoArray.each do |vid|
+    filename = "%03d" % (vid[0]) + "_" + vid[1][0].to_s.tr(":", "").tr(",", "").strip.tr(" ", "_") + ".mp4"
+    download_file = File.open filename, 'wb'
+    link = 'https://www.pentesteracademy.com' + vid[1][1]
+    request = Typhoeus::Request.new(link, headers: {'Cookie' => cookie}, followlocation: true)
+
+=begin
+    request.on_progress { |dltotal, dlnow, ultotal, ulnow|
+      puts (dltotal.to_f / dlnow.to_f)
+      puts dltotal
+      puts dlnow
+        if dltotal.is_a? Integer
+        progress = "=" *  (((dlnow.to_f / dltotal.to_f) * 100) / 5)
+      else 
+        puts "Done"
+      end
+      printf("\rProgress: [%-20s]", progress)
+=end
+    }
+
+    request.on_body do |chunk|
+      download_file.write(chunk)
+    end
+    request.on_complete do |response|
+      puts filename + " downloaded" 
+      download_file.close
+    end
+    hydra.queue(request)
+  end
+  hydra.run
+
 end
 
 # Gathering information
@@ -136,4 +146,4 @@ end
 # -----------------------
 
 puts "Starting Download"
-download_videos(downloadHash, sessionCookie, 10)
+download_videos(downloadHash, sessionCookie, 5)
