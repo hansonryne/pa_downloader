@@ -14,6 +14,7 @@ require 'tty-progressbar'
 require 'mechanize'
 require 'cgi'
 require 'typhoeus'
+require 'open-uri'
 
 NAVIGATOR = Mechanize.new { |agent|
   agent.user_agent_alias = "Windows Firefox"
@@ -36,10 +37,22 @@ end
 # Based on the provided course ID, there is a different list of videos
 # This returns that list of videos as an Array
 def scrape_course_links(courseID)
-  coursePage = NAVIGATOR.get('https://www.pentesteracademy.com/course?id=' + courseID)
-  videoList = coursePage.links_with(:href => /video/)
+  #Thanks for the null byte in the html Vivek
+  html = open('https://www.pentesteracademy.com/course?id=' + courseID).read.gsub("\u0000","")
+  parsed = Nokogiri::HTML(html)
+  links = parsed.xpath('//a')
 
-  uniqueVideoList = videoList.reverse.uniq {|i| i.href}.reverse
+  vidLinks = []
+  
+  # Unless....if...unless.  Sorry
+  links.each do |l|
+    unless l.attribute('href').nil?
+      if l.attribute('href').value.match(/video\?id=\d+/)
+        vidLinks << [l.attribute('href').value, l.inner_text.strip] unless l.inner_text.strip.empty?
+      end
+    end
+  end
+  return vidLinks
 end
 
 
@@ -53,7 +66,7 @@ end
 def scrape_download_links(videoList)
   downloadLinks = []
   videoList.each do |key, link|
-    temp = NAVIGATOR.get('https://www.pentesteracademy.com' + link.href)
+    temp = NAVIGATOR.get('https://www.pentesteracademy.com' + link[0])
     downloadLinks << temp.link_with(:text => "Video").href
   end
   downloadLinks
@@ -77,7 +90,7 @@ def download_videos(videoHash, cookie, concurrency)
     'https://www.pentesteracademy.com' + i[1][1]
   end
   videoArray.each do |vid|
-    filename = "%03d" % (vid[0]) + "_" + vid[1][0].to_s.tr(":", "").tr(",", "").strip.tr(" ", "_") + ".mp4"
+    filename = "%03d" % (vid[0]) + "_" + vid[1][0][1].to_s.tr(":", "").tr(",", "").strip.tr(" ", "_") + ".mp4"
     download_file = File.open filename, 'wb'
     link = 'https://www.pentesteracademy.com' + vid[1][1]
     request = Typhoeus::Request.new(link, headers: {'Cookie' => cookie}, followlocation: true)
@@ -119,12 +132,11 @@ sessionCookie = build_cookie(cookie)
 links = scrape_course_links(course.to_s)
 
 links.each do |l|
-  printf "#%-5s %-100s %s\n", (links.find_index(l)+1).to_s, l.text.strip, l.href
+  printf "#%-5s %-100s %s\n", (links.find_index(l)+1).to_s, l[1], l[0]
 end
 # -----------------------
 
-
-# Make user selecte the range of videos they want
+# Make user select the range of videos they want
 #  ----------------------
 puts "Enter the range of videos you want to download."
 puts "Which number do you want to start with?"
@@ -147,4 +159,4 @@ end
 # -----------------------
 
 puts "Starting Download"
-download_videos(downloadHash, sessionCookie, 8)
+download_videos(downloadHash, sessionCookie, 5)
