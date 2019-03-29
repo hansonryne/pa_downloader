@@ -4,7 +4,6 @@
 # It is function-focused and not at all pretty
 #
 # Plans:
-#   Upgrade to selenium driver to handle sessions
 #   Add option parser
 #
 
@@ -20,17 +19,17 @@ NAVIGATOR = Mechanize.new { |agent|
   agent.user_agent_alias = "Windows Firefox"
 }
 
-# Need to build the cookie from a pasted value since you can't login via Mechanize.
-# This will go away in a future version
+# Need to build the cookie from a pasted value since you can't login via Mechanize or Selenium if you have MFA on your Google account.
 def build_cookie(cookieValue)
-  httpCookie = CGI::Cookie.new("SACSID", cookieValue)
-  httpCookie.path = "/"
-  httpCookie.domain = "www.pentesteracademy.com"
-  httpCookie.expires = Time.now + (60*60*24)
-  httpCookie.secure = true
-  httpCookie.httponly = true
-  httpCookie.name.to_s + "=" + httpCookie.value.to_s
-  httpCookie.to_s.split(";")[0]
+#   httpCookie = CGI::Cookie.new("SACSID", cookieValue)
+#   httpCookie.path = "/"
+#   httpCookie.domain = "www.pentesteracademy.com"
+#   httpCookie.expires = Time.now + (60*60*24)
+#   httpCookie.secure = true
+#   httpCookie.httponly = true
+#   httpCookie.name.to_s + "=" + httpCookie.value.to_s
+#   httpCookieReturned = httpCookie.to_s.split(";")[0]
+  httpCookie = "SACSID=" + cookieValue
 end
 
 
